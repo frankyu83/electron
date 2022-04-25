@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: frank yu <frank.yu83@gmail.com>
+Date: Mon, 25 Apr 2022 11:35:52 +0000
+Subject: video: clear hevc testing switch limit && decoder switch limit
+
+
+diff --git a/media/base/media_switches.cc b/media/base/media_switches.cc
+index 71b1563c8f8c646e1c01299b647a535212c445b8..bde5c9b0d658dce7e7c221c5e4a9198b660af7ab 100644
+--- a/media/base/media_switches.cc
++++ b/media/base/media_switches.cc
+@@ -796,7 +796,7 @@ const base::Feature MEDIA_EXPORT kWasapiRawAudioCapture{
+ 
+ // Enables HEVC hardware accelerated decoding.
+ const base::Feature kD3D11HEVCDecoding{"D3D11HEVCDecoding",
+-                                       base::FEATURE_DISABLED_BY_DEFAULT};
++                                       base::FEATURE_ENABLED_BY_DEFAULT};
+ 
+ // Enable VP9 kSVC decoding with HW decoder for webrtc use case on Windows.
+ const base::Feature kD3D11Vp9kSVCHWDecoding{"D3D11Vp9kSVCHWDecoding",
+diff --git a/media/filters/source_buffer_state.cc b/media/filters/source_buffer_state.cc
+index 74814c3be00575968840b2faccb821f320d2c7d7..9b1b37b0d8bc0e999d0c8d90f0bf812ee66259ec 100644
+--- a/media/filters/source_buffer_state.cc
++++ b/media/filters/source_buffer_state.cc
+@@ -718,37 +718,6 @@ bool SourceBufferState::OnNewConfigs(
+                << " config: " << video_config.AsHumanReadableString();
+       DCHECK(video_config.IsValidConfig());
+ 
+-      if (video_config.codec() == VideoCodec::kHEVC) {
+-#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
+-#if BUILDFLAG(IS_CHROMEOS_LACROS)
+-        if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+-                switches::kLacrosEnablePlatformEncryptedHevc)) {
+-          NOTREACHED() << "MSE parser must not emit HEVC tracks on runtime "
+-                          "configurations that do not support HEVC playback "
+-                          "via platform.";
+-          return false;
+-        }
+-#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+-        // HEVC is only supported through EME under this build flag, so
+-        // require the config to be for an encrypted track. Even so,
+-        // conditionally allow clear HEVC if cmdline has test override.
+-        if (video_config.encryption_scheme() ==
+-                EncryptionScheme::kUnencrypted &&
+-            !base::CommandLine::ForCurrentProcess()->HasSwitch(
+-                switches::kEnableClearHevcForTesting)) {
+-          MEDIA_LOG(ERROR, media_log_)
+-              << "MSE playback of HEVC on is only supported via platform "
+-                 "decryptor, but the provided HEVC "
+-                 "track is not encrypted.";
+-          return false;
+-        }
+-#elif !BUILDFLAG(ENABLE_PLATFORM_HEVC)
+-        NOTREACHED()
+-            << "MSE parser must not emit HEVC tracks on build configurations "
+-               "that do not support HEVC playback via platform.";
+-#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
+-      }
+-
+       const auto& it = std::find(expected_vcodecs.begin(),
+                                  expected_vcodecs.end(), video_config.codec());
+       if (it == expected_vcodecs.end()) {
+diff --git a/media/gpu/vaapi/vaapi_video_decoder.cc b/media/gpu/vaapi/vaapi_video_decoder.cc
+index 3f99768aa9fea54ebb4c839b6072bd326a176955..25fe3ed24db43778fb13205e37c6b08fee9d3681 100644
+--- a/media/gpu/vaapi/vaapi_video_decoder.cc
++++ b/media/gpu/vaapi/vaapi_video_decoder.cc
+@@ -272,14 +272,6 @@ void VaapiVideoDecoder::Initialize(const VideoDecoderConfig& config,
+     // but we still need to do special handling with it.
+     transcryption_ = (VaapiWrapper::GetImplementationType() ==
+                       VAImplementation::kMesaGallium);
+-#endif
+-#if BUILDFLAG(ENABLE_PLATFORM_HEVC_DECODING)
+-  } else if (config.codec() == VideoCodec::kHEVC &&
+-             !base::CommandLine::ForCurrentProcess()->HasSwitch(
+-                 switches::kEnableClearHevcForTesting)) {
+-    SetErrorState("clear HEVC content is not supported");
+-    std::move(init_cb).Run(DecoderStatus::Codes::kUnsupportedEncryptionMode);
+-    return;
+ #endif
+   }
+ 
